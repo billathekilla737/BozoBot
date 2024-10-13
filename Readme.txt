@@ -1,0 +1,1 @@
+A bot to help manage the bozo league.
