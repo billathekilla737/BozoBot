@@ -1,56 +1,58 @@
 import discord
 from discord import app_commands
 from tabulate import tabulate
+from Assets.Methods import *
+from Assets.SundayMidnightReset import *
+import asyncio
 
-# Your bot token
-TOKEN = 'YOUR_DISCORD_BOT_TOKEN'
 
 # Intents setup
-intents = discord.Intents.default()
-client = discord.Client(intents=intents)
-tree = app_commands.CommandTree(client)
+intents = discord.Intents.all()
+client = discord.Client(command_prefix='/',intents=intents)
+tree = app_commands.CommandTree(client) 
+CHANNEL_ID = get_channel_id()
+BotTestChannel = client.get_channel(CHANNEL_ID)
+TOKEN = get_token()
 
-# League members and their results (initially all weeks are grey ⬜)
-league_data = {
-    "Aaren": ["⬜"] * 18,
-    "Ben": ["⬜"] * 18,
-    "Christian": ["⬜"] * 18,
-    "Isaiah": ["⬜"] * 18,
-    "Jake": ["⬜"] * 18,
-    "Max": ["⬜"] * 18,
-    "Nathan": ["⬜"] * 18,
-    "Noah": ["⬜"] * 18,
-    "Patton": ["⬜"] * 18,
-    "Preston": ["⬜"] * 18,
-    "Zack": ["⬜"] * 18,
-}
-
-# Function to create the table
-def create_table():
-    headers = ["Name"] + [f"Week {i+1}" for i in range(18)]
-    table = [[name] + weeks for name, weeks in league_data.items()]
-    return tabulate(table, headers, tablefmt="github")
-
-# Command to show the league table
-@tree.command(name="show_league", description="Displays the league table with all members and their current results.")
-async def show_league(interaction: discord.Interaction):
-    table_str = create_table()
-    await interaction.response.send_message(f"```{table_str}```")
-
-# Command to update a player's result
-@tree.command(name="update_result", description="Update a player's result for a specific week.")
-async def update_result(interaction: discord.Interaction, name: str, week: int, result: str):
-    if name in league_data and 1 <= week <= 18 and result in ["⬜", "🟩", "🟥"]:
-        league_data[name][week - 1] = result
-        await interaction.response.send_message(f"Updated {name}'s result for Week {week} to {result}.")
-    else:
-        await interaction.response.send_message("Invalid input! Make sure the name, week, and result are correct.")
 
 # Event to trigger once the bot is ready and sync the commands with Discord
 @client.event
 async def on_ready():
-    await tree.sync()
+    try:
+        synced = await tree.sync()
+        print(f"Synced {len(synced)} commands")
+    except Exception as e:
+        print(e)
     print(f'Logged in as {client.user}!')
+        
+    # Sunday Midnight Reset
+    while True:
+        if isSundayatMidnight == True:
+            #Reset the Parley Picks
+            pass
+        else:
+            #Do nothing
+            pass
+        await asyncio.sleep(500)
+
+# Slash command to lock a parley pick
+@tree.command(name="lock", description="Save your parley pick.")
+async def lock_parley_pick(interaction: discord.Interaction, pick: str):
+    # Save the pick to the JSON file
+    save_parley_pick(interaction.user.id, pick)
+    # Respond to the user
+    await interaction.response.send_message(f"Your parley pick has been locked as: \"{pick}\"")
+
+# Slash command to show all parley picks
+@tree.command(name="show_picks", description="Displays all saved parley picks.")
+async def show_parley_picks(interaction: discord.Interaction):
+    # Use await to call the async function and pass the client and guild ID
+    table_str = await format_parley_picks(client, interaction.guild_id)
+    
+    # Send the formatted table as a response
+    await interaction.response.send_message(f"```{table_str}```")
+
+
 
 # Run the bot
 client.run(TOKEN)
