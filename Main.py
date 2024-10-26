@@ -76,9 +76,17 @@ async def show_parley_picks(interaction: discord.Interaction):
     # Use await to call the async function and pass the client and guild ID
     table_str = await format_parley_picks(client, interaction.guild_id)
     #table_str = await format_parley_picks(client, interaction.guild_id, openai_client)
-
     # Send the formatted table as a response
     await interaction.response.send_message(f"```{table_str}```")
+
+@tree.command(name="remind_missing_locks", description="Remind users who have not submitted their parley picks.")
+async def remind_missing_locks_command(interaction: discord.Interaction):
+    # Fetch the channel where the command was invoked
+    channel = interaction.channel
+    # Call the async function to remind users who have not submitted their picks
+    await remind_missing_locks(client, interaction.guild_id, channel)
+    # Send a response to the command invoker
+    await interaction.response.send_message("Reminder sent to users who have not submitted their parley picks.")
 
 # Run the bot
 client.run(TOKEN)
