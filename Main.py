@@ -7,7 +7,7 @@ from openai import OpenAI
 
 
 # Intents setup
-client = OpenAI(api_key=get_openai_key())
+#client = OpenAI(api_key=get_openai_key())
 intents = discord.Intents.all()
 client = discord.Client(command_prefix='/',intents=intents)
 tree = app_commands.CommandTree(client) 
