@@ -16,21 +16,26 @@ BASE_DIR = Path(__file__).parent.parent  # Adjust to two levels up to account fo
 # Define data paths relative to the base directory
 DATA_FILE = BASE_DIR / "Assets/parley_picks.json"
 ENV_FILE = BASE_DIR / "Assets/Key.env"
+SEASON_DATA_FILE = BASE_DIR / "Assets/season_parley_picks.json"
+
 
 # Load environment variables from the correct path
 load_dotenv(dotenv_path=ENV_FILE)
 
+# Create the json file if it doesn't exist
 def initialize_data_file():
     if not Path(DATA_FILE).is_file() or Path(DATA_FILE).stat().st_size == 0:
         with open(DATA_FILE, "w") as file:
             json.dump({}, file)
 
+#Get the Discord token
 def get_token():
     # Load the .env file
     # Retrieve the token
     token = os.getenv("TOKEN")
     return token
 
+#Get the channel ID from the .env file
 def get_channel_id():
     # Set a default channel ID or raise an error if not set
     channel_id = os.getenv("CHANNEL_ID")
@@ -38,18 +43,21 @@ def get_channel_id():
         raise ValueError("CHANNEL_ID environment variable not set")
     return int(channel_id)
 
+#Get the TESTchannel ID from the .env file
 def get_test_channel_id():
     # Load the .env file
     # Retrieve the channel ID
     channel_id = int(os.getenv("TEST_CHANNEL_ID"))
     return channel_id
 
+#Get the OpenAI key from the .env file
 def get_openai_key():
     # Load the .env file
     # Retrieve the OpenAI key
     openai_key = os.getenv("OPENAI_API_KEY")
     return openai_key
 
+# Function to import parley picks from a JSON file
 def import_parley_picks():
     # Check if the file exists; if not, create an empty JSON object
     if not Path(DATA_FILE).is_file():
@@ -115,15 +123,58 @@ def save_parley_pick(user_id, parley_pick):
         json.dump(data, file, indent=4)
         print(f"{user_id} saved Parley pick saved as: {parley_pick}")
 
+#Save the picks to JSON and Wipe the week picks
 async def wipe_parley_picks():
     # Wipe all parley picks from the JSON file
     with open(DATA_FILE, "w") as file:
+        SeasonPickSaver()
         json.dump({}, file)
         print("Parley picks have been wiped.")
 
     with open(DATA_FILE, "r") as file:
         return json.load(file)
 
+#Save the picks to season long JSON
+def SeasonPickSaver():
+    #TODO: If for somereason this gets called twice in a week it will make duplicate entries
+    # Load the weekly picks from parley_picks.json
+    if not DATA_FILE.is_file():
+        print("No weekly picks file found.")
+        return
+
+    with open(DATA_FILE, "r") as file:
+        try:
+            weekly_picks = json.load(file)
+        except json.JSONDecodeError:
+            print("Warning: Invalid JSON detected in weekly picks file.")
+            return
+
+    # Ensure the season data file exists
+    if not SEASON_DATA_FILE.is_file():
+        with open(SEASON_DATA_FILE, "w") as file:
+            json.dump({}, file)
+    
+    # Load existing season data
+    with open(SEASON_DATA_FILE, "r") as file:
+        try:
+            season_data = json.load(file)
+        except json.JSONDecodeError:
+            print("Warning: Invalid JSON detected in season picks file. Starting fresh.")
+            season_data = {}
+
+    # Update season data with this week's picks
+    for user_id, pick in weekly_picks.items():
+        if str(user_id) in season_data:
+            season_data[str(user_id)].append(pick)
+        else:
+            season_data[str(user_id)] = [pick]
+
+    # Save the updated season data back to the JSON file
+    with open(SEASON_DATA_FILE, "w") as file:
+        json.dump(season_data, file, indent=4)
+        print("Season picks have been updated.")
+
+# Function to check if it is Monday at midnight
 def isMondayatMidnight():
     # Create a timezone object for Chicago/Central
     chi_tz = pytz.timezone('America/Chicago')
@@ -137,6 +188,7 @@ def isMondayatMidnight():
     else:
         return False
 
+# Function to check if it is Wednesday at 5:00 PM
 def isWednesdayEvening():
     # Create a timezone object for Chicago/Central
     chi_tz = pytz.timezone('America/Chicago')
@@ -150,6 +202,7 @@ def isWednesdayEvening():
     else:
         return False
 
+# Function to remind users who have not submitted their parley picks
 async def remind_missing_locks(client, guild_id, channel):
     print("Checking for missing locks...")
     # Import parley picks and determine submitted user IDs
@@ -192,8 +245,6 @@ async def remind_missing_locks(client, guild_id, channel):
             print(f"Channel issue: {channel}")
     else:
         print("All users have submitted their locks.")
-
-
 
 
 #Testing OpenAI
