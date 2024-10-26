@@ -3,8 +3,6 @@ import os
 import json
 from pathlib import Path
 from tabulate import tabulate
-import requests
-from bs4 import BeautifulSoup
 import json
 from pathlib import Path
 import datetime
@@ -26,10 +24,11 @@ def get_token():
     return token
 
 def get_channel_id():
-    # Load the .env file
-    # Retrieve the channel ID
-    channel_id = int(os.getenv("CHANNEL_ID"))
-    return channel_id
+    # Set a default channel ID or raise an error if not set
+    channel_id = os.getenv("CHANNEL_ID")
+    if channel_id is None:
+        raise ValueError("CHANNEL_ID environment variable not set")
+    return int(channel_id)
 
 def get_test_channel_id():
     # Load the .env file
