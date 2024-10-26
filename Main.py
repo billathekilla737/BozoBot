@@ -63,7 +63,7 @@ async def lock_for_parley_pick(interaction: discord.Interaction, person: discord
         f"{person.mention}'s parley pick has been locked as: \"{pick}\"", ephemeral=True)
 
 # Slash command to lock a parley pick
-@tree.command(name="mylock", description="Save your parley pick.")
+@tree.command(name="mylock", description="Save your parley pick for the week.")
 async def lock_parley_pick(interaction: discord.Interaction, pick: str):
     # Save the pick to the JSON file
     save_parley_pick(interaction.user.id, pick)
@@ -71,7 +71,7 @@ async def lock_parley_pick(interaction: discord.Interaction, pick: str):
     await interaction.response.send_message(f"Your parley pick has been locked as: \"{pick}\"")
 
 # Slash command to show all parley picks
-@tree.command(name="show_picks", description="Displays all saved parley picks.")
+@tree.command(name="show_picks", description="Displays everyones saved parley picks for the week.")
 async def show_parley_picks(interaction: discord.Interaction):
     # Use await to call the async function and pass the client and guild ID
     table_str = await format_parley_picks(client, interaction.guild_id)

@@ -3,14 +3,22 @@ import os
 import json
 from pathlib import Path
 from tabulate import tabulate
+import requests
+from bs4 import BeautifulSoup
 import json
 from pathlib import Path
 import datetime
 import pytz
 
-#from Main import openai
-load_dotenv("Assets/Key.env")
-DATA_FILE = "Assets/parley_picks.json"
+# Determine the base directory (the root where the script is running)
+BASE_DIR = Path(__file__).parent.parent  # Adjust to two levels up to account for 'Assets/Methods.py'
+
+# Define data paths relative to the base directory
+DATA_FILE = BASE_DIR / "Assets/parley_picks.json"
+ENV_FILE = BASE_DIR / "Assets/Key.env"
+
+# Load environment variables from the correct path
+load_dotenv(dotenv_path=ENV_FILE)
 
 def initialize_data_file():
     if not Path(DATA_FILE).is_file() or Path(DATA_FILE).stat().st_size == 0:
