@@ -108,6 +108,20 @@ python Main.py
   BobBuilder has locked in their parley pick: "Team A wins with 10 points!"
   ```
 
+#### 4. `/remind`
+- **Description:** Sends a reminder ping to all users who haven’t submitted their parley pick yet. This is useful to ensure everyone gets a chance to contribute before the deadline.
+- **Usage:** Only available to admins to avoid excessive notifications.
+- **Example:**
+  ```bash
+  /remind
+  ```
+  **Response:**
+  ```
+  @BobDylan @JohnDoe Reminder: You haven’t locked in your parley pick yet! Don’t miss out on this week’s action!
+  ```
+
+This command checks the list of members and pings only those who haven't submitted their pick. If everyone has submitted a pick, it responds with a message indicating all picks are in.
+
 ## Code Overview
 
 ### Main Functionality:
