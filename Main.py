@@ -3,7 +3,10 @@ from discord import app_commands
 from tabulate import tabulate
 from Assets.Methods import *
 import asyncio
+from datetime import datetime
+import pytz
 from openai import OpenAI
+
 
 
 # Intents setup
@@ -42,13 +45,29 @@ async def on_ready():
         print(e)
     
     # Sunday Midnight Reset
+# Sunday Midnight Reset
     while True:
-        if isMondayatMidnight == True:
-           await wipe_parley_picks()
-        if isWednesdayEvening == True:
+        # Check for Monday at Midnight
+        if isMondayatMidnight() and not monday_reset_done:
+            await wipe_parley_picks()
+            monday_reset_done = True  # Set flag to prevent re-trigger
+
+        # Reset Monday flag after the window has passed
+        if isAfterMondayResetWindow():
+            monday_reset_done = False  # Reset flag after Monday midnight window
+
+        # Check for Wednesday at 5 PM
+        if isWednesdayEvening() and not wednesday_reminder_done:
             await remind_missing_locks(client, Channel.guild.id, Channel)
+            wednesday_reminder_done = True  # Set flag to prevent re-trigger
+
+        # Reset Wednesday flag after the window has passed
+        if isAfterWednesdayReminderWindow():
+            wednesday_reminder_done = False  # Reset flag after Wednesday window
+
         print("Sleeping for 10 minutes")
         await asyncio.sleep(600)
+
 #End of on_ready
 #######################################################################################################################
 

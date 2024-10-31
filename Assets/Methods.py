@@ -78,49 +78,47 @@ def import_parley_picks():
 # Make output table message
 async def format_parley_picks(client, guild_id):
     data = import_parley_picks()
+    print("Data loaded:", data)  # Debug
+
     table_data = []
 
     # Fetch the guild object
     guild = client.get_guild(guild_id)
+    print("Guild fetched:", guild)  # Debug
 
     for user_id, pick in data.items():
         # Convert user ID to Discord member nickname
         try:
             member = guild.get_member(int(user_id))
-            if member:
-                # Use the member's nickname or username
-                display_name = member.display_name
-            else:
-                display_name = "Unknown Member"
-        except Exception:
-            display_name = "Unknown Member"  # Fallback in case member can't be fetched
+            display_name = member.display_name if member else "Unknown Member"
+            print("Member found:", display_name)  # Debug
+        except Exception as e:
+            display_name = "Unknown Member"
+            print(f"Error fetching member for {user_id}: {e}")  # Debug
 
-        #Feed the pick data into openAI so that it can return the team name and the game start time
-        # openai_client = openai.ChatCompletion.create(
-        #     model="gpt-4o-mini",
-        #     messages=[
-        #         {"role": "system", "content": "You will be give a list of parley picks I will need to know the team name if it isn't given and the game start time of each pick."},
-        #         {"role": "user", "content": pick},
-        #     ],
-        # )
+        # Append to table with pick extracted as needed
+        table_data.append([display_name, pick["parley_pick"] if isinstance(pick, dict) else pick])
 
-
-        table_data.append([display_name, pick])
-
-    # Create headers and use tabulate to format the data
+    print("Table data populated:", table_data)  # Debug
     return tabulate(table_data, headers=["Names", "Parley Pick"], tablefmt="github")
-
 # Function to save parley picks to a JSON file
 def save_parley_pick(user_id, parley_pick):
     data = import_parley_picks()  # Ensure it loads correctly from the correct path
 
-    # Store the parley pick associated with the user's ID
-    data[str(user_id)] = parley_pick
+    # Get the current date in MM:DD:YYYY format
+    current_date = datetime.datetime.now().strftime("%m:%d:%Y")
+
+
+    # Store the parley pick and current date associated with the user's ID
+    data[str(user_id)] = {
+        "parley_pick": parley_pick,
+        "date": current_date
+    }
 
     # Save the updated data back to the JSON file
     with open(DATA_FILE, "w") as file:
         json.dump(data, file, indent=4)
-        print(f"{user_id} saved Parley pick saved as: {parley_pick}")
+        print(f"{user_id} parley pick saved with date: {current_date} as: {parley_pick}")
 
 #Save the picks to JSON and Wipe the week picks
 async def wipe_parley_picks():
@@ -133,9 +131,8 @@ async def wipe_parley_picks():
     with open(DATA_FILE, "r") as file:
         return json.load(file)
 
-#Save the picks to season long JSON
+#Save the picks to season long JSON (Supports Old Legacy Data with No Dates)
 def SeasonPickSaver():
-    #TODO: If for somereason this gets called twice in a week it will make duplicate entries
     # Load the weekly picks from parley_picks.json
     if not DATA_FILE.is_file():
         print("No weekly picks file found.")
@@ -162,19 +159,29 @@ def SeasonPickSaver():
             season_data = {}
 
     # Update season data with this week's picks
-    for user_id, pick in weekly_picks.items():
-        if str(user_id) in season_data:
-            season_data[str(user_id)].append(pick)
+    for user_id, entry in weekly_picks.items():
+        # Check if the entry is a dictionary with 'parley_pick' and 'date'
+        if isinstance(entry, dict) and "parley_pick" in entry and "date" in entry:
+            pick_data = {"parley_pick": entry["parley_pick"], "date": entry["date"]}
         else:
-            season_data[str(user_id)] = [pick]
+            # For legacy entries without date
+            pick_data = {"parley_pick": entry, "date": None}
+
+        # Append pick data to the user's list of season picks
+        if str(user_id) in season_data:
+            season_data[str(user_id)].append(pick_data)
+        else:
+            season_data[str(user_id)] = [pick_data]
 
     # Save the updated season data back to the JSON file
     with open(SEASON_DATA_FILE, "w") as file:
         json.dump(season_data, file, indent=4)
         print("Season picks have been updated.")
+        json.dump(season_data, file, indent=4)
+        print("Season picks have been updated.")
 
 # Function to check if it is Monday at midnight
-def isMondayatMidnight():
+def isMondayatMidnight() -> bool:
     # Create a timezone object for Chicago/Central
     chi_tz = pytz.timezone('America/Chicago')
 
@@ -188,7 +195,7 @@ def isMondayatMidnight():
         return False
 
 # Function to check if it is Wednesday at 5:00 PM
-def isWednesdayEvening():
+def isWednesdayEvening() -> bool:
     # Create a timezone object for Chicago/Central
     chi_tz = pytz.timezone('America/Chicago')
 
@@ -196,7 +203,7 @@ def isWednesdayEvening():
     correctednow = datetime.datetime.now(chi_tz)
 
     # Check if it is Wednesday and exactly 5:00 PM
-    if correctednow.weekday() == 2 and correctednow.hour == 17 and correctednow.minute == 0:
+    if correctednow.weekday() == 2 and correctednow.hour == 17 and correctednow.minute <= 15:
         return True
     else:
         return False
@@ -266,8 +273,16 @@ async def assign_bozo(client, guild, new_bozo):
         print("Removing Brains role from Bozo...")
         await new_bozo.remove_roles(brains_role)
 
+def isAfterMondayResetWindow() -> bool:
+    chi_tz = pytz.timezone('America/Chicago')  # Define timezone in the function scope
+    correctednow = datetime.datetime.now(chi_tz)
+    return correctednow.weekday() != 0 or correctednow.hour > 1
 
-
+# Function to check if it’s after the Wednesday reminder window (past 6 PM on Wednesday)
+def isAfterWednesdayReminderWindow() -> bool:
+    chi_tz = pytz.timezone('America/Chicago') 
+    correctednow = datetime.datetime.now(chi_tz)
+    return correctednow.weekday() != 2 or correctednow.hour > 18
 
 
 #Testing OpenAI
