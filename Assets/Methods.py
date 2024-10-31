@@ -3,12 +3,11 @@ import os
 import json
 from pathlib import Path
 from tabulate import tabulate
-import requests
-from bs4 import BeautifulSoup
 import json
 from pathlib import Path
 import datetime
 import pytz
+import discord
 
 # Determine the base directory (the root where the script is running)
 BASE_DIR = Path(__file__).parent.parent  # Adjust to two levels up to account for 'Assets/Methods.py'
@@ -248,6 +247,7 @@ async def remind_missing_locks(client, guild_id, channel):
 
 # Helper function to assign the "Bozo" role, ensuring only one member has it at a time
 async def assign_bozo(client, guild, new_bozo):
+    print("Assigning Bozo role...")
     # Get roles by name
     bozo_role = discord.utils.get(guild.roles, name="🤡 - The Bozo")
     brains_role = discord.utils.get(guild.roles, name="🧠 - The Brains")
@@ -263,6 +263,7 @@ async def assign_bozo(client, guild, new_bozo):
     # Assign Bozo role to the new user and remove the Brains role if they have it
     await new_bozo.add_roles(bozo_role)
     if brains_role in new_bozo.roles:
+        print("Removing Brains role from Bozo...")
         await new_bozo.remove_roles(brains_role)
 
 
