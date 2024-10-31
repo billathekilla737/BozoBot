@@ -246,6 +246,28 @@ async def remind_missing_locks(client, guild_id, channel):
     else:
         print("All users have submitted their locks.")
 
+# Helper function to assign the "Bozo" role, ensuring only one member has it at a time
+async def assign_bozo(client, guild, new_bozo):
+    # Get roles by name
+    bozo_role = discord.utils.get(guild.roles, name="🤡 - The Bozo")
+    brains_role = discord.utils.get(guild.roles, name="🧠 - The Brains")
+    
+    # Remove the Bozo role from any current holder
+    for member in guild.members:
+        if bozo_role in member.roles:
+            await member.remove_roles(bozo_role)
+            if brains_role:
+                await member.add_roles(brains_role)
+            break  # Stop after finding the first bozo (there should only be one)
+    
+    # Assign Bozo role to the new user and remove the Brains role if they have it
+    await new_bozo.add_roles(bozo_role)
+    if brains_role in new_bozo.roles:
+        await new_bozo.remove_roles(brains_role)
+
+
+
+
 
 #Testing OpenAI
 ##########################################################

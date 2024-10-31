@@ -88,5 +88,10 @@ async def remind_missing_locks_command(interaction: discord.Interaction):
     # Send a response to the command invoker
     await interaction.response.send_message("Reminder sent to users who have not submitted their parley picks.")
 
+@tree.command(name="assign_bozo", description="Assign a user the '🤡 - The Bozo' role.")
+async def assign_bozo_role(interaction: discord.Interaction, person: discord.Member):
+    await assign_bozo(client, interaction.guild, person)
+    await interaction.response.send_message(f"{person.mention} has been assigned the '🤡 - The Bozo' role.")
+
 # Run the bot
 client.run(TOKEN)
