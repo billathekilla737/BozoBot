@@ -84,7 +84,6 @@ async def format_parley_picks(client, guild_id):
 
     # Fetch the guild object
     guild = client.get_guild(guild_id)
-    print("Guild fetched:", guild)  # Debug
 
     for user_id, pick in data.items():
         # Convert user ID to Discord member nickname
@@ -102,6 +101,8 @@ async def format_parley_picks(client, guild_id):
     print("Table data populated:", table_data)  # Debug
     return tabulate(table_data, headers=["Names", "Parley Pick"], tablefmt="github")
 # Function to save parley picks to a JSON file
+#TODO: Add odds field to command and JSON entry
+#TODO: If the person put + in front just save the number and not the + sign. Keep -'s
 def save_parley_pick(user_id, parley_pick):
     data = import_parley_picks()  # Ensure it loads correctly from the correct path
 
@@ -149,7 +150,7 @@ def SeasonPickSaver():
     if not SEASON_DATA_FILE.is_file():
         with open(SEASON_DATA_FILE, "w") as file:
             json.dump({}, file)
-    
+
     # Load existing season data
     with open(SEASON_DATA_FILE, "r") as file:
         try:
@@ -160,14 +161,14 @@ def SeasonPickSaver():
 
     # Update season data with this week's picks
     for user_id, entry in weekly_picks.items():
-        # Check if the entry is a dictionary with 'parley_pick' and 'date'
+        # Ensure the entry has 'parley_pick' and 'date'
         if isinstance(entry, dict) and "parley_pick" in entry and "date" in entry:
             pick_data = {"parley_pick": entry["parley_pick"], "date": entry["date"]}
         else:
-            # For legacy entries without date
-            pick_data = {"parley_pick": entry, "date": None}
+            print(f"Invalid entry format for user {user_id}. Skipping entry.")
+            continue
 
-        # Append pick data to the user's list of season picks
+        # Append or create the list of picks for the user
         if str(user_id) in season_data:
             season_data[str(user_id)].append(pick_data)
         else:
@@ -175,8 +176,6 @@ def SeasonPickSaver():
 
     # Save the updated season data back to the JSON file
     with open(SEASON_DATA_FILE, "w") as file:
-        json.dump(season_data, file, indent=4)
-        print("Season picks have been updated.")
         json.dump(season_data, file, indent=4)
         print("Season picks have been updated.")
 
