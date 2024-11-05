@@ -100,8 +100,8 @@ async def format_parley_picks(client, guild_id):
 
     print("Table data populated:", table_data)  # Debug
     return tabulate(table_data, headers=["Names", "Parley Pick"], tablefmt="github")
-# Function to save parley picks to a JSON file
 
+# Function to save parley picks to a JSON file
 def save_parley_pick(user_id, parley_pick, odds):
     data = import_parley_picks()  # Ensure it loads correctly from the correct path
 
@@ -132,6 +132,7 @@ def save_parley_pick(user_id, parley_pick, odds):
         json.dump(data, file, indent=4)
         print(f"{user_id} parley pick saved with date: {current_date}, pick: {parley_pick}, odds: {odds}")
 
+# Function to backup and wipe parley picks and transfer data around
 async def backup_and_wipe_parley_picks():
     print("Backing up and wiping parley picks...")
 
@@ -142,7 +143,7 @@ async def backup_and_wipe_parley_picks():
     else:
         current_data = {}
 
-    #Save last week into Season file
+    # Save last week into Season file
     SeasonSaver()
 
     # Step 2: Transfer data from One_Weeks_Picks.json to Two_Weeks_Picks.json
@@ -155,19 +156,37 @@ async def backup_and_wipe_parley_picks():
     else:
         print("One_Weeks_Picks.json is empty or missing; nothing to transfer to Two_Weeks_Picks.json.")
 
-    # Step 3: Save the current data to One_Weeks_Picks.json
-    with open(ONE_WEEK, "w") as file:
-        json.dump(current_data, file, indent=4)
-    print("Saved current week's picks to One_Weeks_Picks.json.")
+    # Step 3: Wipe all entries in DATA_FILE except user ID and ELO values
+    # Filter DATA_FILE to keep only user ID and ELO if present
+    cleaned_data = {}
+    for user_id, data in current_data.items():
+        if "ELO" in data:
+            cleaned_data[user_id] = {"ELO": data["ELO"]}
 
-    # Step 4: Wipe DATA_FILE
+    # Step 4: Update cleaned_data with ELO values from ONE_WEEK
+    if ONE_WEEK.exists():
+        with open(ONE_WEEK, "r") as file:
+            one_week_data = json.load(file)
+        
+        # Overwrite with ELO values from ONE_WEEK
+        for user_id, data in one_week_data.items():
+            if "ELO" in data:
+                cleaned_data[user_id] = {"ELO": data["ELO"]}
+
+    # Save the cleaned and updated data back to DATA_FILE
     with open(DATA_FILE, "w") as file:
+        json.dump(cleaned_data, file, indent=4)
+    print("DATA_FILE has been updated with only user ID and ELO values.")
+
+    # Step 5: Wipe ONE_WEEK
+    with open(ONE_WEEK, "w") as file:
         json.dump({}, file)
-    print("Parley picks have been wiped from DATA_FILE.")
+    print("One_Weeks_Picks.json has been wiped.")
 
-    # Return the wiped data for verification if needed
-    return current_data
+    # Return the cleaned data for verification if needed
+    return cleaned_data
 
+# Function to save parley picks to Season Tracker File
 def SeasonSaver():
     """
     Appends the weekly parley picks from ONE_WEEK to the season-long record in SEASON_FILE.

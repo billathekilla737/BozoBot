@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-#from Assets.Methods import get_openai_key
+from Assets.Methods import get_openai_key
 from pathlib import Path
 from fuzzywuzzy import fuzz
 from fuzzywuzzy import process
@@ -22,8 +22,8 @@ TWO_WEEK = BASE_DIR / "Two_Weeks_Picks.json"
 HASH_FILE = BASE_DIR / "processed_files.json"
 DATA_FILE = BASE_DIR / "parley_picks.json"
 
-#openai.api_key = get_openai_key()
-#client = OpenAI()
+openai.api_key = get_openai_key()
+client = OpenAI()
 #Function to feed images of pick results to openAI. AI returns the results of the picks based on image content.
 
 def compute_sha256(file_path):
@@ -129,41 +129,75 @@ def extract_text_with_results(image_path):
     #print("DEBUG: Extracted results:", extracted_results)
     return extracted_results
 
-def update_json_with_results(results, NoResults=DATA_FILE, ONE_WEEK_path=ONE_WEEK):
+#def update_json_with_results(results, NoResults=DATA_FILE, OutputFile=ONE_WEEK):
+
+def update_json_with_results(results, InputFile=DATA_FILE, OutputFile=DATA_FILE):
     """
     Updates JSON with win/loss results based on extracted data using fuzzy matching.
-    Adds a "result" field with "win", "loss", or "miss" to each user entry.
+    Adds a "result" field with "win", "loss", or "miss" to each user entry, unless it already has "win" or "loss".
     """
     # Load existing data
-    with open(NoResults, "r") as file:
-        data = json.load(file)
+    try:
+        with open(InputFile, "r") as file:
+            data = json.load(file)
+        print("Loaded data from DATA_FILE successfully.")
+    except Exception as e:
+        print(f"Error loading DATA_FILE: {e}")
+        return None
 
-    # Threshold for minimum similarity ratio to consider a match
-    fuzzy_threshold = 33
+    # Increase threshold for better matches
+    fuzzy_threshold = 30
 
-    # Create a list of tuples (user_id, parley_pick) for fuzzy matching
-    parley_picks = [(user_id, value["parley_pick"]) for user_id, value in data.items()]
+    # Extract parley picks for fuzzy matching
+    try:
+        parley_picks = [(user_id, value["parley_pick"]) for user_id, value in data.items()]
+        print(f"Parley picks extracted for fuzzy matching: {parley_picks}")
+    except KeyError as e:
+        print(f"Error accessing parley_pick in data: {e}")
+        return None
 
-    # Initialize results as "miss" for all entries initially
-    for user_id in data:
-        data[user_id]["result"] = "miss"
+    # Initialize "miss" only for entries that do not already have "win" or "loss"
+    for user_id, details in data.items():
+        if details.get("result") not in ["win", "loss"]:
+            details["result"] = "miss"
+    print("Initialized 'miss' only for entries without 'win' or 'loss'.")
 
+    # Perform fuzzy matching and update results
     for bet_title, result in results.items():
-        # Find the best match for the bet_title in parley_picks
-        best_match = max(parley_picks, key=lambda x: fuzz.ratio(bet_title, x[1]))
-        match_ratio = fuzz.ratio(bet_title, best_match[1])
+        print(f"\nProcessing bet title: '{bet_title}' with expected result: '{result}'")
 
-        # Only update if match ratio meets or exceeds the threshold
-        if match_ratio >= fuzzy_threshold:
-            data[best_match[0]]["result"] = result  # Set "win" or "loss"
+        # Attempt to find the best match for each bet title
+        best_match = None
+        best_ratio = 0
+        for user_id, parley_pick in parley_picks:
+            match_ratio = fuzz.token_set_ratio(bet_title, parley_pick)
+            print(f"Comparing '{bet_title}' with '{parley_pick}' - Match Ratio: {match_ratio}")
 
-    # Write updated results to the output file
-    with open(ONE_WEEK_path, "w") as ONE_WEEK:
-        json.dump(data, ONE_WEEK, indent=4)
+            # Track the best match
+            if match_ratio > best_ratio:
+                best_match = (user_id, parley_pick)
+                best_ratio = match_ratio
 
-    return data  # Ensure updated data is returned
+        # Check if the best match meets the threshold and update if it's currently "miss"
+        if best_match and best_ratio >= fuzzy_threshold:
+            if data[best_match[0]].get("result") == "miss":  # Only update if currently set to "miss"
+                print(f"Match found: '{best_match[1]}' with ratio {best_ratio}. Updating result to '{result}'.")
+                data[best_match[0]]["result"] = result
+            else:
+                print(f"Entry for '{best_match[1]}' already set to '{data[best_match[0]]['result']}', skipping update.")
+        else:
+            print(f"No suitable match for '{bet_title}' (best match ratio: {best_ratio}). Skipping update.")
 
-#update_json_with_results(results={'DEN NUGGETS': 'loss', 'TEXAS A&M': 'win','OVER 64.5': 'loss','VANDERBILT +18.5': 'win','A.J. BROWN': 'loss'},ONE_WEEK_path=ONE_WEEK)
+    # Write updated results to ONE_WEEK
+    try:
+        with open(OutputFile, "w") as ONE_WEEK:
+            json.dump(data, ONE_WEEK, indent=4)
+        print("Results updated in ONE_WEEK file successfully.")
+    except Exception as e:
+        print(f"Error writing to ONE_WEEK file: {e}")
+
+    return data  # Return updated data for verification if needed
+#update_json_with_results(results={'DEN NUGGETS': 'loss', 'TEXAS A&M': 'win','OVER 64.5': 'loss','VANDERBILT +18.5': 'win','A.J. BROWN': 'loss'},OutputFile=ONE_WEEK)
 
 def calculate_implied_probability(odds):
         if odds > 0:
@@ -171,18 +205,7 @@ def calculate_implied_probability(odds):
         else:
             return abs(odds) / (abs(odds) + 100)
 
-
-
-
-
-
-def convert_american_to_decimal(american_odds):
-    if american_odds < 0:
-        return (100 / abs(american_odds)) + 1
-    else:
-        return (american_odds / 100) + 1
-
-def parlay_impact_analysis(player_bets_file, bet_amount=50, cap_adjustment=20):
+def parlay_impact_analysis(player_bets_file = ONE_WEEK, base_elo=1000, k_factor=20, high_risk_scaling_factor=1.5, high_risk_threshold=3.0):
     # Load JSON data from the file
     with open(player_bets_file, 'r') as file:
         player_bets_data = json.load(file)
@@ -190,7 +213,7 @@ def parlay_impact_analysis(player_bets_file, bet_amount=50, cap_adjustment=20):
     # Initialize ELO for each player if not already present
     for user_id, bet_info in player_bets_data.items():
         if "ELO" not in bet_info:
-            player_bets_data[user_id]["ELO"] = 1000  # Starting ELO value
+            player_bets_data[user_id]["ELO"] = base_elo  # Starting ELO value
 
     # Restructure the JSON data into a list of dictionaries for processing
     formatted_bets = []
@@ -198,13 +221,19 @@ def parlay_impact_analysis(player_bets_file, bet_amount=50, cap_adjustment=20):
         odds = float(bet_info.get("odds", 0))
         
         # Convert American odds to decimal odds
-        decimal_odds = convert_american_to_decimal(odds)
-        
+        if odds >= 100:
+            decimal_odds = (odds / 100) + 1
+        elif odds <= -100:
+            decimal_odds = (100 / abs(odds)) + 1
+        else:
+            print(f"Invalid odds for user_id {user_id}: {odds}")
+            continue
+
         result = bet_info.get("result", "miss").lower()
         
-        if decimal_odds == 1:  # After conversion, 1 implies zero odds in American terms
-            print(f"WARNING: Missing or zero odds for user_id {user_id}. Skipping this entry.")
-            continue  # Skip entries with missing or zero odds
+        if decimal_odds <= 1:
+            print(f"WARNING: Invalid decimal odds for user_id {user_id}. Skipping this entry.")
+            continue
 
         # Only add bets that are "win" or "loss" for ELO calculation
         if result in ["win", "loss"]:
@@ -223,26 +252,33 @@ def parlay_impact_analysis(player_bets_file, bet_amount=50, cap_adjustment=20):
 
     # Adjust ELO for each player based on their odds and result
     for index, row in df_bets.iterrows():
-        # Calculate points based on odds difficulty
-        difficulty_factor = (2.5 - row["Odds"])  # Lower odds get more points if won
-        if row["Result"] == "Win":
-            points = min(difficulty_factor * 10, cap_adjustment)
-        else:  # Loss
-            points = -min(difficulty_factor * 5, cap_adjustment)  # Lesser penalty for losing hard bets
+        current_elo = player_bets_data[row["Player"]]["ELO"]
+        
+        # Calculate win probability based on decimal odds
+        win_prob = 1 / row["Odds"]
 
-        # Update ELO based on points
-        player_bets_data[row["Player"]]["ELO"] += round(points, 1)
-        print(f"DEBUG: Player {row['Player']} new ELO: {player_bets_data[row['Player']]['ELO']} with points: {points}")
+        # Determine if the bet is considered high risk
+        is_high_risk = row["Odds"] >= high_risk_threshold
+        
+        # Adjust ELO change based on high-risk and low-risk adjustments
+        if row["Result"] == "Win":
+            # Apply high-risk scaling factor if applicable
+            elo_change = k_factor * (1 / win_prob) * (high_risk_scaling_factor if is_high_risk else 1)
+        else:  # Loss
+            # Apply high-risk scaling factor if applicable
+            elo_change = -k_factor * (1 / win_prob) * (high_risk_scaling_factor if is_high_risk else 1)
+
+        # Update player's ELO
+        new_elo = current_elo + elo_change
+        player_bets_data[row["Player"]]["ELO"] = round(new_elo, 1)
+        
+        print(f"DEBUG: Player {row['Player']} new ELO: {new_elo} with ELO change: {elo_change}")
 
     # Save the updated JSON data back to the file
     with open(player_bets_file, 'w') as file:
         json.dump(player_bets_data, file, indent=4)
     
     print("ELO scores have been updated in the JSON file.")
-
-
-
-
 
 def get_nickname(user_id, guild):
     member = guild.get_member(int(user_id))
@@ -336,5 +372,3 @@ def ELO_Plot_Generator(guild, last_week_file = ONE_WEEK, two_weeks_ago=TWO_WEEK,
     #plt.show()
 
     return output_path
-
-parlay_impact_analysis(ONE_WEEK)

@@ -48,7 +48,7 @@ async def on_ready():
     while True:
         # Check for Monday at Midnight
         if isMondayatMidnight() and not monday_reset_done:
-            await backup_and_wipe_parley_picks()
+            #await backup_and_wipe_parley_picks()
             monday_reset_done = True  # Set flag to prevent re-trigger
 
         # Reset Monday flag after the window has passed
@@ -136,7 +136,6 @@ async def provide_results(interaction: discord.Interaction, attachment: discord.
                 return
             
             updated_data = EloSystem.update_json_with_results(extracted_results)
-            print(updated_data)
 
             # Create a summary of updated entries using cached usernames
             summary_lines = []
@@ -173,5 +172,15 @@ async def show_power_ranking(interaction: discord.Interaction):
     guild = client.get_guild(interaction.guild_id)
     PlotPath = EloSystem.ELO_Plot_Generator(guild)
     await interaction.response.send_message(file=discord.File(PlotPath))
+
+#Command to calculate the ELO impact of everyone after the results are submitted
+@tree.command(name="calculate_elo", description="Calculate the ELO impact of the results.")
+async def calculate_elo_impact(interaction: discord.Interaction):
+    guild = client.get_guild(interaction.guild_id)
+    await interaction.response.send_message("Calculating ELO impact...")
+    backup_and_wipe_parley_picks()
+    EloSystem.parlay_impact_analysis()
+    await interaction.followup.send("ELO impact has been calculated and applied.", ephemeral=True)
+
 # Run the bot
 client.run(TOKEN)
