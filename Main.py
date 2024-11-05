@@ -5,7 +5,6 @@ from Assets.Methods import *
 import asyncio
 from datetime import datetime
 import pytz
-from openai import OpenAI
 import Assets.EloSystem as EloSystem
 
 
@@ -37,7 +36,6 @@ async def on_ready():
     print(f'Logged in as {client.user}!')                                       #
     #############################################################################
 
-
     # Sync the commands with Discord
     try:
         synced = await tree.sync()
@@ -50,7 +48,7 @@ async def on_ready():
     while True:
         # Check for Monday at Midnight
         if isMondayatMidnight() and not monday_reset_done:
-            await wipe_parley_picks()
+            await backup_and_wipe_parley_picks()
             monday_reset_done = True  # Set flag to prevent re-trigger
 
         # Reset Monday flag after the window has passed
@@ -74,23 +72,21 @@ async def on_ready():
 
 #Slash Commands
 # New slash command to lock a parley pick for another user
-#TODO: Add odds field to command and JSON entry
 @tree.command(name="lockfor", description="Save a parley pick for another user without notifying them.")
-async def lock_for_parley_pick(interaction: discord.Interaction, person: discord.Member, pick: str):
-    # Save the pick for the specified user
-    save_parley_pick(person.id, pick)
+async def lock_for_parley_pick(interaction: discord.Interaction, person: discord.Member, pick: str, odds: float):
+    # Save the pick and odds for the specified user
+    save_parley_pick(person.id, pick, odds)
     # Send an ephemeral response to the command invoker
     await interaction.response.send_message(
-        f"{person.mention}'s parley pick has been locked as: \"{pick}\"", ephemeral=True)
+        f"{person.mention}'s parley pick has been locked as: \"{pick}\" with odds: {odds}", ephemeral=True)
 
 # Slash command to lock a parley pick
-#TODO: Add odds field to command and JSON entry
 @tree.command(name="mylock", description="Save your parley pick for the week.")
-async def lock_parley_pick(interaction: discord.Interaction, pick: str):
-    # Save the pick to the JSON file
-    save_parley_pick(interaction.user.id, pick)
+async def lock_parley_pick(interaction: discord.Interaction, pick: str, odds: float):
+    # Save the pick and odds to the JSON file
+    save_parley_pick(interaction.user.id, pick, odds)
     # Respond to the user
-    await interaction.response.send_message(f"Your parley pick has been locked as: \"{pick}\"")
+    await interaction.response.send_message(f"Your parley pick has been locked as: \"{pick}\" with odds: {odds}")
 
 # Slash command to show all parley picks
 @tree.command(name="show_picks", description="Displays everyones saved parley picks for the week.")
@@ -140,6 +136,7 @@ async def provide_results(interaction: discord.Interaction, attachment: discord.
                 return
             
             updated_data = EloSystem.update_json_with_results(extracted_results)
+            print(updated_data)
 
             # Create a summary of updated entries using cached usernames
             summary_lines = []
@@ -147,14 +144,19 @@ async def provide_results(interaction: discord.Interaction, attachment: discord.
                 if 'result' in entry:
                     # Retrieve member from cache using the pre-cached member list
                     member = interaction.guild.get_member(int(user_id))
-                    username = member.display_name if member else user_id  # Fallback to user_id if not found
+                    if member:
+                        username = member.display_name
+                    else:
+                        username = f"Unknown User ({user_id})"  # Fallback to indicate user is missing
+
                     summary_lines.append(f"{username}: {entry['result']}")
 
             summary = "\n".join(summary_lines)
-            
+
             await interaction.followup.send(
                 f"Results have been successfully updated in the JSON file.\n\nSummary of updates:\n{summary}"
             )
+
 
         except Exception as e:
             await interaction.followup.send(f"Failed to process the image: {e}")
@@ -163,6 +165,7 @@ async def provide_results(interaction: discord.Interaction, attachment: discord.
 
     else:
         print("Duplicate file submission, processing halted.")
+        await interaction.followup.send("Duplicate file submission, processing halted.")
 
 # Show Power Ranking MatPlotLib
 @tree.command(name="show_rankings", description="Show the current power ranking.")

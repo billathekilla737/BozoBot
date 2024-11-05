@@ -1,5 +1,4 @@
 from dotenv import load_dotenv
-import os
 import json
 from pathlib import Path
 from tabulate import tabulate
@@ -8,6 +7,7 @@ from pathlib import Path
 import datetime
 import pytz
 import discord
+import os
 
 # Determine the base directory (the root where the script is running)
 BASE_DIR = Path(__file__).parent.parent  # Adjust to two levels up to account for 'Assets/Methods.py'
@@ -15,7 +15,9 @@ BASE_DIR = Path(__file__).parent.parent  # Adjust to two levels up to account fo
 # Define data paths relative to the base directory
 DATA_FILE = BASE_DIR / "Assets/parley_picks.json"
 ENV_FILE = BASE_DIR / "Assets/Key.env"
-SEASON_DATA_FILE = BASE_DIR / "Assets/season_parley_picks.json"
+SEASON_FILE = BASE_DIR / "Assets/season_parley_picks.json"
+ONE_WEEK = BASE_DIR / "Assets/One_Weeks_Picks.json"
+TWO_WEEK = BASE_DIR / "Assets/Two_Weeks_Picks.json"
 
 
 # Load environment variables from the correct path
@@ -26,6 +28,12 @@ def initialize_data_file():
     if not Path(DATA_FILE).is_file() or Path(DATA_FILE).stat().st_size == 0:
         with open(DATA_FILE, "w") as file:
             json.dump({}, file)
+
+def get_openai_key():
+    # Load the .env file
+    # Retrieve the OpenAI key
+    openai_key = os.getenv("OPENAI_API_KEY")
+    return openai_key
 
 #Get the Discord token
 def get_token():
@@ -49,13 +57,6 @@ def get_test_channel_id():
     channel_id = int(os.getenv("TEST_CHANNEL_ID"))
     return channel_id
 
-#Get the OpenAI key from the .env file
-def get_openai_key():
-    # Load the .env file
-    # Retrieve the OpenAI key
-    openai_key = os.getenv("OPENAI_API_KEY")
-    return openai_key
-
 # Function to import parley picks from a JSON file
 def import_parley_picks():
     # Check if the file exists; if not, create an empty JSON object
@@ -78,7 +79,6 @@ def import_parley_picks():
 # Make output table message
 async def format_parley_picks(client, guild_id):
     data = import_parley_picks()
-    print("Data loaded:", data)  # Debug
 
     table_data = []
 
@@ -101,83 +101,113 @@ async def format_parley_picks(client, guild_id):
     print("Table data populated:", table_data)  # Debug
     return tabulate(table_data, headers=["Names", "Parley Pick"], tablefmt="github")
 # Function to save parley picks to a JSON file
-#TODO: Add odds field to command and JSON entry
-#TODO: If the person put + in front just save the number and not the + sign. Keep -'s
-def save_parley_pick(user_id, parley_pick):
+
+def save_parley_pick(user_id, parley_pick, odds):
     data = import_parley_picks()  # Ensure it loads correctly from the correct path
 
     # Get the current date in MM:DD:YYYY format
     current_date = datetime.datetime.now().strftime("%m:%d:%Y")
 
+    # Convert odds to string and remove '+' sign if present
+    odds = str(odds)  # Convert to string
+    if odds.startswith('+'):
+        odds = odds[1:]
 
-    # Store the parley pick and current date associated with the user's ID
-    data[str(user_id)] = {
-        "parley_pick": parley_pick,
-        "date": current_date
-    }
+    # Store the parley pick, odds, and current date associated with the user's ID
+    if str(user_id) in data:
+        data[str(user_id)].update({
+            "parley_pick": parley_pick,
+            "date": current_date,
+            "odds": odds
+        })
+    else:
+        data[str(user_id)] = {
+            "parley_pick": parley_pick,
+            "date": current_date,
+            "odds": odds
+        }
 
     # Save the updated data back to the JSON file
     with open(DATA_FILE, "w") as file:
         json.dump(data, file, indent=4)
-        print(f"{user_id} parley pick saved with date: {current_date} as: {parley_pick}")
+        print(f"{user_id} parley pick saved with date: {current_date}, pick: {parley_pick}, odds: {odds}")
 
-#Save the picks to JSON and Wipe the week picks
-async def wipe_parley_picks():
-    # Wipe all parley picks from the JSON file
+async def backup_and_wipe_parley_picks():
+    print("Backing up and wiping parley picks...")
+
+    # Step 1: Load the current data from DATA_FILE
+    if DATA_FILE.exists():
+        with open(DATA_FILE, "r") as file:
+            current_data = json.load(file)
+    else:
+        current_data = {}
+
+    #Save last week into Season file
+    SeasonSaver()
+
+    # Step 2: Transfer data from One_Weeks_Picks.json to Two_Weeks_Picks.json
+    if ONE_WEEK.exists():
+        with open(ONE_WEEK, "r") as file:
+            last_week_data = json.load(file)
+        with open(TWO_WEEK, "w") as file:
+            json.dump(last_week_data, file, indent=4)
+        print("Transferred last week's picks to Two_Weeks_Picks.json.")
+    else:
+        print("One_Weeks_Picks.json is empty or missing; nothing to transfer to Two_Weeks_Picks.json.")
+
+    # Step 3: Save the current data to One_Weeks_Picks.json
+    with open(ONE_WEEK, "w") as file:
+        json.dump(current_data, file, indent=4)
+    print("Saved current week's picks to One_Weeks_Picks.json.")
+
+    # Step 4: Wipe DATA_FILE
     with open(DATA_FILE, "w") as file:
-        SeasonPickSaver()
         json.dump({}, file)
-        print("Parley picks have been wiped.")
+    print("Parley picks have been wiped from DATA_FILE.")
 
-    with open(DATA_FILE, "r") as file:
-        return json.load(file)
+    # Return the wiped data for verification if needed
+    return current_data
 
-#Save the picks to season long JSON (Supports Old Legacy Data with No Dates)
-def SeasonPickSaver():
-    # Load the weekly picks from parley_picks.json
-    if not DATA_FILE.is_file():
-        print("No weekly picks file found.")
+def SeasonSaver():
+    """
+    Appends the weekly parley picks from ONE_WEEK to the season-long record in SEASON_FILE.
+    If a user already exists in SEASON_FILE, it adds new entries to their record.
+    """
+    # Load current week's data from ONE_WEEK
+    if ONE_WEEK.exists():
+        with open(ONE_WEEK, "r") as file:
+            one_week_data = json.load(file)
+    else:
+        print("One_Weeks_Picks.json is empty or missing; nothing to save to season.")
         return
 
-    with open(DATA_FILE, "r") as file:
+    # Load season data, handling cases where the file is empty or has invalid JSON
+    season_data = {}
+    if SEASON_FILE.exists():
         try:
-            weekly_picks = json.load(file)
+            with open(SEASON_FILE, "r") as file:
+                if file.read().strip():  # Check if file is non-empty
+                    file.seek(0)  # Reset pointer to start of file for loading
+                    season_data = json.load(file)
+                else:
+                    print("SEASON_FILE is empty, initializing new data.")
         except json.JSONDecodeError:
-            print("Warning: Invalid JSON detected in weekly picks file.")
-            return
+            print("SEASON_FILE contains invalid JSON, initializing new data.")
 
-    # Ensure the season data file exists
-    if not SEASON_DATA_FILE.is_file():
-        with open(SEASON_DATA_FILE, "w") as file:
-            json.dump({}, file)
-
-    # Load existing season data
-    with open(SEASON_DATA_FILE, "r") as file:
-        try:
-            season_data = json.load(file)
-        except json.JSONDecodeError:
-            print("Warning: Invalid JSON detected in season picks file. Starting fresh.")
-            season_data = {}
-
-    # Update season data with this week's picks
-    for user_id, entry in weekly_picks.items():
-        # Ensure the entry has 'parley_pick' and 'date'
-        if isinstance(entry, dict) and "parley_pick" in entry and "date" in entry:
-            pick_data = {"parley_pick": entry["parley_pick"], "date": entry["date"]}
+    # Append each user's weekly data to their season data
+    for user_id, weekly_info in one_week_data.items():
+        if user_id not in season_data:
+            # Initialize user data if not already in season file
+            season_data[user_id] = {key: [value] for key, value in weekly_info.items()}
         else:
-            print(f"Invalid entry format for user {user_id}. Skipping entry.")
-            continue
+            # Append new weekly data for existing user
+            for key, value in weekly_info.items():
+                season_data[user_id].setdefault(key, []).append(value)
 
-        # Append or create the list of picks for the user
-        if str(user_id) in season_data:
-            season_data[str(user_id)].append(pick_data)
-        else:
-            season_data[str(user_id)] = [pick_data]
-
-    # Save the updated season data back to the JSON file
-    with open(SEASON_DATA_FILE, "w") as file:
+    # Save updated season data back to SEASON_FILE
+    with open(SEASON_FILE, "w") as file:
         json.dump(season_data, file, indent=4)
-        print("Season picks have been updated.")
+    print("Season parley picks have been updated in season_parley_picks.json.")
 
 # Function to check if it is Monday at midnight
 def isMondayatMidnight() -> bool:
