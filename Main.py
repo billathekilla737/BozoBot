@@ -48,21 +48,33 @@ async def on_ready():
     while True:
         # Check for Monday at Midnight
         if isMondayatMidnight() and not monday_reset_done:
-            #await backup_and_wipe_parley_picks()
+            await backup_and_wipe_parley_picks()
             monday_reset_done = True  # Set flag to prevent re-trigger
-
-        # Reset Monday flag after the window has passed
-        if isAfterMondayResetWindow():
-            monday_reset_done = False  # Reset flag after Monday midnight window
+        
+        if isTuesdayat8AM() and not tuesday_reset_done:
+            await EloSystem.parlay_impact_analysis()
+            tuesday_reset_done = True
+            #we will send out the power rankings
+            guild = client.get_guild(CHANNEL_ID)
+            PlotPath = EloSystem.ELO_Plot_Generator(guild)
+            await Channel.send(file=discord.File(PlotPath))
+            #await BotTestChannel.send(file=discord.File(PlotPath))
 
         # Check for Wednesday at 5 PM
         if isWednesdayEvening() and not wednesday_reminder_done:
             await remind_missing_locks(client, Channel.guild.id, Channel)
             wednesday_reminder_done = True  # Set flag to prevent re-trigger
 
+
+        # Reset Monday flag after the window has passed
+        if isAfterMondayResetWindow():
+            monday_reset_done = False 
+        # Reset Tuesday flag after the window has passed
+        if isAfterTuesdayResetWindow():
+            tuesday_reset_done = False
         # Reset Wednesday flag after the window has passed
         if isAfterWednesdayReminderWindow():
-            wednesday_reminder_done = False  # Reset flag after Wednesday window
+            wednesday_reminder_done = False  
 
         print("Sleeping for 10 minutes")
         await asyncio.sleep(600)
@@ -72,21 +84,28 @@ async def on_ready():
 
 #Slash Commands
 # New slash command to lock a parley pick for another user
+#Only from Tuesday 8:05a.m. to Saturday 10:30a.m.
 @tree.command(name="lockfor", description="Save a parley pick for another user without notifying them.")
 async def lock_for_parley_pick(interaction: discord.Interaction, person: discord.Member, pick: str, odds: float):
     # Save the pick and odds for the specified user
-    save_parley_pick(person.id, pick, odds)
-    # Send an ephemeral response to the command invoker
-    await interaction.response.send_message(
-        f"{person.mention}'s parley pick has been locked as: \"{pick}\" with odds: {odds}", ephemeral=True)
+    if isBetweenTuesdayAndSaturday():
+        save_parley_pick(person.id, pick, odds)
+        await interaction.response.send_message(
+            f"{person.mention}'s parley pick has been locked as: \"{pick}\" with odds: {odds}", ephemeral=True)
+    else:
+        await interaction.response.send_message("You can only lock picks from Tuesday morning to Friday at midnight.", ephemeral=True)
 
 # Slash command to lock a parley pick
+#Only from Tuesday 8:05a.m. to Saturday 10:30a.m.
 @tree.command(name="mylock", description="Save your parley pick for the week.")
 async def lock_parley_pick(interaction: discord.Interaction, pick: str, odds: float):
-    # Save the pick and odds to the JSON file
-    save_parley_pick(interaction.user.id, pick, odds)
-    # Respond to the user
-    await interaction.response.send_message(f"Your parley pick has been locked as: \"{pick}\" with odds: {odds}")
+    if isBetweenTuesdayAndSaturday():
+        # Save the pick and odds for the user
+        save_parley_pick(interaction.user.id, pick, odds)
+        # Respond to the user
+        await interaction.response.send_message(f"Your parley pick has been locked as: \"{pick}\" with odds: {odds}")
+    else:
+        await interaction.response.send_message("You can only lock picks from Tuesday morning to Friday at midnight.", ephemeral=True)
 
 # Slash command to show all parley picks
 @tree.command(name="show_picks", description="Displays everyones saved parley picks for the week.")
@@ -174,13 +193,13 @@ async def show_power_ranking(interaction: discord.Interaction):
     await interaction.response.send_message(file=discord.File(PlotPath))
 
 #Command to calculate the ELO impact of everyone after the results are submitted
-@tree.command(name="calculate_elo", description="Calculate the ELO impact of the results.")
-async def calculate_elo_impact(interaction: discord.Interaction):
-    guild = client.get_guild(interaction.guild_id)
-    await interaction.response.send_message("Calculating ELO impact...")
-    backup_and_wipe_parley_picks()
-    EloSystem.parlay_impact_analysis()
-    await interaction.followup.send("ELO impact has been calculated and applied.", ephemeral=True)
+# @tree.command(name="calculate_elo", description="Calculate the ELO impact of the results.")
+# async def calculate_elo_impact(interaction: discord.Interaction):
+#     guild = client.get_guild(interaction.guild_id)
+#     await interaction.response.send_message("Calculating ELO impact...")
+#     backup_and_wipe_parley_picks()#Will happen twice a week which is BADDDD
+#     EloSystem.parlay_impact_analysis()
+#     await interaction.followup.send("ELO impact has been calculated and applied.", ephemeral=True)
 
 # Run the bot
 client.run(TOKEN)

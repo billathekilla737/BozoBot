@@ -29,6 +29,7 @@ def initialize_data_file():
         with open(DATA_FILE, "w") as file:
             json.dump({}, file)
 
+#Get the OpenAI key from the .env file
 def get_openai_key():
     # Load the .env file
     # Retrieve the OpenAI key
@@ -86,6 +87,10 @@ async def format_parley_picks(client, guild_id):
     guild = client.get_guild(guild_id)
 
     for user_id, pick in data.items():
+        # Skip users without a populated "parley_pick" field
+        if not isinstance(pick, dict) or "parley_pick" not in pick:
+            continue
+
         # Convert user ID to Discord member nickname
         try:
             member = guild.get_member(int(user_id))
@@ -95,11 +100,14 @@ async def format_parley_picks(client, guild_id):
             display_name = "Unknown Member"
             print(f"Error fetching member for {user_id}: {e}")  # Debug
 
+        # Get odds if available
+        odds = pick.get("odds", "N/A")
+
         # Append to table with pick extracted as needed
-        table_data.append([display_name, pick["parley_pick"] if isinstance(pick, dict) else pick])
+        table_data.append([display_name, pick["parley_pick"], odds])
 
     print("Table data populated:", table_data)  # Debug
-    return tabulate(table_data, headers=["Names", "Parley Pick"], tablefmt="github")
+    return tabulate(table_data, headers=["Names", "Parley Pick", "Odds"], tablefmt="github")
 
 # Function to save parley picks to a JSON file
 def save_parley_pick(user_id, parley_pick, odds):
@@ -136,12 +144,12 @@ def save_parley_pick(user_id, parley_pick, odds):
 async def backup_and_wipe_parley_picks():
     print("Backing up and wiping parley picks...")
 
-    # Step 1: Load the current data from DATA_FILE
+    # Step 1: Load the current data from DATA_FILE and store it in a temporary variable
     if DATA_FILE.exists():
         with open(DATA_FILE, "r") as file:
-            current_data = json.load(file)
+            original_data = json.load(file)
     else:
-        current_data = {}
+        original_data = {}
 
     # Save last week into Season file
     SeasonSaver()
@@ -156,14 +164,13 @@ async def backup_and_wipe_parley_picks():
     else:
         print("One_Weeks_Picks.json is empty or missing; nothing to transfer to Two_Weeks_Picks.json.")
 
-    # Step 3: Wipe all entries in DATA_FILE except user ID and ELO values
-    # Filter DATA_FILE to keep only user ID and ELO if present
+    # Step 3: Create a cleaned version of DATA_FILE with only user IDs and ELO values
     cleaned_data = {}
-    for user_id, data in current_data.items():
+    for user_id, data in original_data.items():
         if "ELO" in data:
             cleaned_data[user_id] = {"ELO": data["ELO"]}
 
-    # Step 4: Update cleaned_data with ELO values from ONE_WEEK
+    # Step 4: Update cleaned_data with ELO values from ONE_WEEK if available
     if ONE_WEEK.exists():
         with open(ONE_WEEK, "r") as file:
             one_week_data = json.load(file)
@@ -173,18 +180,19 @@ async def backup_and_wipe_parley_picks():
             if "ELO" in data:
                 cleaned_data[user_id] = {"ELO": data["ELO"]}
 
-    # Save the cleaned and updated data back to DATA_FILE
+    # Save the cleaned data back to DATA_FILE
     with open(DATA_FILE, "w") as file:
         json.dump(cleaned_data, file, indent=4)
     print("DATA_FILE has been updated with only user ID and ELO values.")
 
-    # Step 5: Wipe ONE_WEEK
+    # Step 5: Save the original data to ONE_WEEK
     with open(ONE_WEEK, "w") as file:
-        json.dump({}, file)
-    print("One_Weeks_Picks.json has been wiped.")
+        json.dump(original_data, file, indent=4)
+    print("Original contents of DATA_FILE have been saved to One_Weeks_Picks.json.")
 
     # Return the cleaned data for verification if needed
     return cleaned_data
+
 
 # Function to save parley picks to Season Tracker File
 def SeasonSaver():
@@ -242,6 +250,21 @@ def isMondayatMidnight() -> bool:
     else:
         return False
 
+# Function to check if it is Tuesday at 8:00 AM
+def isTuesdayat8AM() -> bool:
+    # Create a timezone object for Chicago/Central
+    chi_tz = pytz.timezone('America/Chicago')
+
+    # Get the current time in Chicago/Central timezone
+    correctednow = datetime.datetime.now(chi_tz)
+
+    # Check if it is Tuesday and between 8:00 AM and 8:50 AM
+    if correctednow.weekday() == 1 and correctednow.hour == 8 and correctednow.minute < 50:
+        return True
+    else:
+        return False
+
+
 # Function to check if it is Wednesday at 5:00 PM
 def isWednesdayEvening() -> bool:
     # Create a timezone object for Chicago/Central
@@ -261,7 +284,7 @@ async def remind_missing_locks(client, guild_id, channel):
     print("Checking for missing locks...")
     # Import parley picks and determine submitted user IDs
     parley_picks = import_parley_picks()
-    submitted_user_ids = set(parley_picks.keys())
+    submitted_user_ids = {user_id for user_id, pick in parley_picks.items() if isinstance(pick, dict) and "parley_pick" in pick}
 
     # Fetch the guild object using the guild ID
     guild = client.get_guild(guild_id)
@@ -300,6 +323,7 @@ async def remind_missing_locks(client, guild_id, channel):
     else:
         print("All users have submitted their locks.")
 
+
 # Helper function to assign the "Bozo" role, ensuring only one member has it at a time
 async def assign_bozo(client, guild, new_bozo):
     print("Assigning Bozo role...")
@@ -321,16 +345,43 @@ async def assign_bozo(client, guild, new_bozo):
         print("Removing Brains role from Bozo...")
         await new_bozo.remove_roles(brains_role)
 
+# Function to check if it’s after the Monday reset window (past 1 AM on Monday)
 def isAfterMondayResetWindow() -> bool:
     chi_tz = pytz.timezone('America/Chicago')  # Define timezone in the function scope
     correctednow = datetime.datetime.now(chi_tz)
     return correctednow.weekday() != 0 or correctednow.hour > 1
+
+# Function to check if it’s after the Tuesday reminder window (past 10 AM on Tuesday)
+def isAfterTuesdayResetWindow() -> bool:
+    chi_tz = pytz.timezone('America/Chicago')  # Define timezone in the function scope
+    correctednow = datetime.datetime.now(chi_tz)
+    return correctednow.weekday() != 1 or correctednow.hour > 10
 
 # Function to check if it’s after the Wednesday reminder window (past 6 PM on Wednesday)
 def isAfterWednesdayReminderWindow() -> bool:
     chi_tz = pytz.timezone('America/Chicago') 
     correctednow = datetime.datetime.now(chi_tz)
     return correctednow.weekday() != 2 or correctednow.hour > 18
+
+# Function to check if it’s between Tuesday at 8:05 AM to Saturday at 10:30 am
+def isBetweenTuesdayAndSaturday() -> bool:
+    chi_tz = pytz.timezone('America/Chicago')
+    correctednow = datetime.datetime.now(chi_tz)
+
+    # Define start and end times for the desired range
+    today = correctednow.date()
+    start_time = chi_tz.localize(datetime.datetime.combine(today, datetime.time(8, 5)))
+    end_time = chi_tz.localize(datetime.datetime.combine(today, datetime.time(10, 30)))
+
+    # Move the start_time to the most recent Tuesday if it's not already a Tuesday or later
+    while start_time.weekday() != 1:  # Weekday 1 corresponds to Tuesday
+        start_time -= datetime.timedelta(days=1)
+
+    # Move the end_time to the next Saturday if it's not already a Saturday
+    while end_time.weekday() != 5:  # Weekday 5 corresponds to Saturday
+        end_time += datetime.timedelta(days=1)
+
+    return start_time <= correctednow <= end_time
 
 
 #Testing OpenAI
